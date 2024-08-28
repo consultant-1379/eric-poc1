@@ -1,0 +1,60 @@
+{{- define "eric-odp-ssh-proxy.sshProxyDeployment.tpl" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  {{ include "eric-odp-ssh-proxy.metadata" . | indent 2 }}
+spec:
+  replicas: {{ template "eric-odp-ssh-proxy.replicas" . }}
+  selector:
+    matchLabels:
+      name: {{ .Values.ssh_broker_service.name }}
+  strategy:
+    type: {{ .Values.ssh_broker.updateStrategy.type }}
+{{- if and (eq .Values.ssh_broker.updateStrategy.type "RollingUpdate") .Values.ssh_broker.updateStrategy.rollingUpdate }}
+  rollingUpdate:
+{{ toYaml .Values.ssh_broker.updateStrategy.rollingUpdate | indent 6 }}
+{{- end }}
+  template:
+    metadata:
+      labels:
+        name: {{ .Values.ssh_broker_service.name }}
+        app.kubernetes.io/name: "{{ .Values.ssh_broker.name }}"
+        app.kubernetes.io/instance: "{{ .Release.Name }}"
+        app.kubernetes.io/version: {{ template "eric-odp-ssh-proxy.chart" . }}
+{{- if index .Values "credm.api.version" }}
+        credm.api.version: {{ ( index .Values "credm.api.version" ) | quote }}
+{{- end }}
+      annotations:
+{{- include "eric-odp-ssh-proxy.product-info" . | indent 8 }}
+{{- with .Values.ssh_broker.podAnnotations }}
+{{ toYaml . | indent 8 }}
+{{- end }}
+    spec:
+{{- if index .Values "ssh_broker" "hostname" }}
+      hostname: {{ .Values.ssh_broker.hostName }}
+{{- end }}
+{{- if index .Values "ssh_broker" "serviceAccountName" }}
+      serviceAccountName: {{ .Values.ssh_broker.serviceAccountName }}
+{{- end }}
+      automountServiceAccountToken: true
+      securityContext:
+{{ include "eric-odp-ssh-proxy.affinity.tpl" . | indent 6 }}
+{{- if .Values.ssh_broker.nodeSelector }}
+      nodeSelector:
+{{- if .Values.ssh_broker.nodeSelector }}
+{{ toYaml .Values.ssh_broker.nodeSelector | indent 8 }}
+{{- end }}
+{{- end }}
+{{ include "eric-odp-ssh-proxy.container.tpl" . | indent 6 }}
+{{- if include "eric-odp-ssh-proxy.pullSecrets" . }}
+      imagePullSecrets:
+        - name: {{ template "eric-odp-ssh-proxy.pullSecrets" . }}
+{{- end }}
+{{- if .Files.Glob "appconfig/sshProxy/volumes.yaml" }}
+volumes:
+{{ include "eric-odp-ssh-proxy.renamePVNames.tpl" . | indent 6 }}
+{{- end }}
+{{- end -}}
+{{- define "eric-odp-ssh-proxy.sshProxyDeployment" -}}
+{{- template "eric-odp-ssh-proxy.util.merge" (append . "eric-odp-ssh-proxy.sshProxyDeployment.tpl") -}}
+{{- end -}}

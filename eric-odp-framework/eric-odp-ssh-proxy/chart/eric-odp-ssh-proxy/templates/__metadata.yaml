@@ -1,0 +1,11 @@
+{{ define "eric-odp-ssh-proxy.metadata" -}}
+name: {{ .Values.ssh_broker.name  }}
+labels:
+{{- if index .Values "service" "sgname" }}
+  sgname: {{ .Values.service.sgname | quote }}
+{{- end }}
+  heritage: {{ .Release.Service | quote }}
+{{- include "eric-odp-ssh-proxy.metadata_app_labels" . | indent 2 }}
+annotations:
+{{- include "eric-odp-ssh-proxy.product-info" . | indent 2 }}
+{{- end -}}

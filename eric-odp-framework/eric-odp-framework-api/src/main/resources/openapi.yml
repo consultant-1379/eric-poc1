@@ -1,0 +1,95 @@
+openapi: 3.0.0
+info:
+  description: API for custom Operator to create a k8s resource on demand
+  version: 1.0.0
+  title: API for On demand creation of K8s resources
+  contact:
+    email: PDLTEAMTOT@pdl.internal.ericsson.com
+  license:
+    name: Apache 2.0
+    url: 'http://www.apache.org/licenses/LICENSE-2.0.html'
+tags:
+  - name: On demand creation of k8s resources
+paths:
+  /k8s-resources/job/actions:
+    put:
+      tags:
+        - On demand creation of k8s resources
+      summary: >-
+        Creates K8s job object for a given user only if there is no job scheduled already
+      description: 'Checks K8s KubeAPI server for any existing pods for the given user and if not, submits a request to create a new job which spins pods'
+      operationId: checkAndCreateJobOnDemand
+      parameters:
+        - name: Content-Type
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobCreationRequestConfig'
+      responses:
+        '201':
+          description: Pod does not exist for the given user and request to create one is sucessfully submitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreationRequestResponse'
+        '200':
+          description: Pod already exists for the given user. Pod name and its state is returned in the response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreationRequestResponse'
+        '409':
+          description: Returns Conflict as the request for creation of the pod was previously submitted and yet to be acted upon. Ignores the current request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreationRequestResponse'
+servers:
+  - url: '/eric-custom-operator/v1'
+components:
+  schemas:
+    JobCreationRequestConfig:
+      type: object
+      required:
+        - userName
+        - ssoToken
+      properties:
+        userName:
+          type: string
+          example: administrator
+          description: name of the user accessing the application
+        ssoToken:
+          type: string
+          example: 'YWRtaW5pc3RyYXRvcg=='
+          description: sso token of the user accessing the application
+        serviceName:
+          type: string
+          example: amos
+          description: name of the application user is accessing
+      description: User data required to access application
+    JobCreationRequestResponse:
+      type: object
+      properties:
+        podName:
+          type: string
+          example: amos-job-on-demand-abcde-hvfc8
+          description: name of the pod that user wants to access the application
+        podState:
+          type: int
+          example: 0
+          description: Integer representing the state of the pod.0-Running,1-Terminated,2-Waiting
+        message:
+          type: string
+          example: pod already exists
+          description: message that contains additional information about the pod state
+      description: Response for On demand k8s job creation request

@@ -1,0 +1,6 @@
+apiVersion: v2
+appVersion: "1.0"
+description: A Helm chart for ODP framework SSH/SFTP proxy templates
+type: library
+name: eric-odp-ssh-proxy
+version: 1.0.0

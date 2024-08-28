@@ -1,0 +1,11 @@
+# IntelliJ files
+.idea
+*.iml
+/eric-odp-framework/eric-odp-broker-api/target/
+/eric-odp-framework/eric-odp-framework-api/target/
+/eric-odp-framework/eric-odp-ftp-proxy/target/
+/eric-odp-framework/eric-odp-idm-connectors/target/
+/eric-odp-framework/target/
+/eric-odp-framework/eric-odp-sso-connectors/target/
+/eric-odp-framework/eric-odp-ssh-proxy/target/
+/eric-odp-framework/eric-odp-k8s-operator/target/

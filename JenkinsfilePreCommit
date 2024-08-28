@@ -1,0 +1,264 @@
+#!/usr/bin/env groovy
+
+/* IMPORTANT:
+ *
+ * In order to make this pipeline work, the following configuration on Jenkins is required:
+ * - slave with a specific label (see pipeline.agent.label below)
+ * - credentials plugin should be installed and have the secrets with the following names:
+ *   + lciadm100credentials (token to access Artifactory)
+ */
+
+def defaultBobImage = 'armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob.2.0:1.7.0-52'
+def bob = new BobCommand()
+        .bobImage(defaultBobImage)
+        .envVars([ISO_VERSION: '${ISO_VERSION}',
+                  ARM_USER:'${ARM_USER}',
+                  ARM_TOKEN:'${ARM_TOKEN}',
+                  HELM_REPO_TOKEN:'${HELM_REPO_TOKEN}',
+        ])
+        .needDockerSocket(true)
+        .toString()
+def failedStage = ''
+pipeline {
+    agent {
+        label 'Cloud-Native'
+    }
+    parameters {
+        string(name: 'ISO_VERSION', defaultValue: '0.0.0', description: 'The ENM ISO version (e.g. 1.65.77)')
+    }
+    stages {
+        stage('Inject Credential Files') {
+            steps {
+                withCredentials([file(credentialsId: 'lciadm100-docker-auth', variable: 'dockerConfig')]) {
+                    sh "install -m 600 ${dockerConfig} ${HOME}/.docker/config.json"
+                }
+            }
+        }
+        stage('Checkout Cloud-Native SG Git Repository') {
+            steps {
+                script {
+                    if (env.GERRIT_CHANGE_NUMBER) {
+                        checkout changelog: true, \
+                        scm: [$class: 'GitSCM', \
+                        branches: [[name: "$GERRIT_REFSPEC"]], \
+                        doGenerateSubmoduleConfigurations: false, \
+                        extensions: [[$class: 'BuildChooserSetting', buildChooser: [$class: 'GerritTriggerBuildChooser']]], \
+                        submoduleCfg: [], \
+                        userRemoteConfigs: [[refspec: "${GERRIT_REFSPEC}", \
+                        url: "${GERRIT_MIRROR}/${GERRIT_PROJECT}"]]]
+                    } else {
+                        println "No GERRIT_CHANGE_NUMBER"
+                        git changelog: true, poll: false, url: '${GERRIT_MIRROR}/${REPO}'
+                    }
+                }
+            }
+        }
+        /*
+        stage('Prepare maven 3.9.5 or greater for usage for the build') {
+            steps {sh "mkdir -p $HOME/eric-odp-maven"
+                sh "tar -xf $WORKSPACE/build_tools/apache-maven-3.9.6-bin.tar.gz -C $HOME/eric-odp-maven --strip-components=1"
+                sh "ln -s $HOME/eric-odp-maven/bin/mvn $HOME/bin/eric-odp-mvn; chmod +x $HOME/eric-odp-maven/bin/mvn; chmox +x $HOME/bin/eric-odp-mvn"
+                sh "eric-odp-mvn"
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                    }
+                }
+            }
+        }*/
+        stage('Helm Lint') {
+            steps {
+                sh "${bob} lint-helm"
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                    }
+                }
+            }
+        }
+        stage('Linting Dockerfile') {
+            steps {
+                sh "${bob} lint-dockerfile"
+                archiveArtifacts '*dockerfilelint.log'
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                    }
+                }
+            }
+       }
+
+       stage('Generate new version') {
+            steps {
+                script {
+                    sh "${bob} generate-new-version"
+                    env.IMAGE_VERS = sh(script: "cat .bob/var.version", returnStdout:true).trim()
+                    echo "this is the reference image version to be used for Maven artifacts version"
+                    echo "${IMAGE_VERS}"
+                }
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                        sh "${bob} remove-image-with-all-tags"
+                    }
+                }
+            }
+       }
+       stage('Build Image and Chart') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'artifactory-seli-api-token-id', usernameVariable: 'ARM_USER', passwordVariable: 'ARM_TOKEN')]) {
+                    //temporary removing helm build
+                    //sh "${bob} generate-new-version build-helm build-image-internal"
+                    sh "${bob} build-image-internal"
+                }
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                        sh "${bob} remove-image-internal"
+                    }
+                }
+            }
+        }
+        stage('Build ENM ODP images') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'artifactory-seli-api-token-id', usernameVariable: 'ARM_USER', passwordVariable: 'ARM_TOKEN')]) {
+                    //temporary removing helm build
+                    //sh "${bob} generate-new-version build-helm build-image-internal"
+                    sh "${bob} build-enm-images-internal"
+                }
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                        sh "${bob} remove-enm-images-internal"
+                    }
+                }
+            }
+        }
+        stage('Build eric-odp-framework') {
+            steps {
+                script {
+//                    env.JDK_11_HOME = "/afs/seli.gic.ericsson.se/app/vbuild/SLED12-x86_64/openjdk/11.0.22"
+//                    env.JAVA_HOME=env.JDK_11_HOME
+                    sh "${bob} tag-and-push-operator-base-internal-image"
+                    sh "cd eric-odp-framework; eric-odp-mvn -s $HOME/.m2/settings.xml versions:set -DnewVersion=${IMAGE_VERS}-SNAPSHOT -DgenerateBackupPoms=false; eric-odp-mvn -s $HOME/.m2/settings.xml -V -U clean install deploy"
+                    sh "${bob} pull-rename-push-operator-image-with-all-tags-internal"
+                }
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                        sh "${bob} remove-operator-images-internal"
+                    }
+                }
+                always {
+                    sh "${bob} remove-operator-images-internal"
+                }
+            }
+        }
+        stage('Publish Images to Artifactory') {
+            steps {
+                sh "${bob} push-image-internal"
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                        sh "${bob} remove-image-internal"
+                    }
+                }
+                always {
+                    sh "${bob} remove-image-internal"
+                }
+            }
+        }
+        stage('Publish ENM ODP Images to Artifactory') {
+            steps {
+                sh "${bob} push-enm-images-internal"
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                        sh "${bob} remove-enm-images-internal"
+                    }
+                }
+                always {
+                    sh "${bob} remove-enm-images-internal"
+                }
+            }
+        }
+        stage('Generate ADP Parameters') {
+            steps {
+                sh "${bob} generate-output-parameters-internal-stage"
+                archiveArtifacts 'artifact.properties'
+            }
+            post {
+                failure {
+                    script {
+                        failedStage = env.STAGE_NAME
+                    }
+                }
+            }
+        }
+    }
+    post {
+        failure {
+            mail to: 'PDLENMOUTS@pdl.internal.ericsson.com',
+                    subject: "Failed Pipeline: ${currentBuild.fullDisplayName}",
+                    body: "Failure on ${env.BUILD_URL}"
+        }
+    }
+}
+
+// More about @Builder: http://mrhaki.blogspot.com/2014/05/groovy-goodness-use-builder-ast.html
+import groovy.transform.builder.Builder
+import groovy.transform.builder.SimpleStrategy
+
+@Builder(builderStrategy = SimpleStrategy, prefix = '')
+class BobCommand {
+    def bobImage = 'bob.2.0:latest'
+    def envVars = [:]
+    def needDockerSocket = false
+
+    String toString() {
+        def env = envVars
+                .collect({ entry -> "-e ${entry.key}=\"${entry.value}\"" })
+                .join(' ')
+
+        def cmd = """\
+            |docker run
+            |--init
+            |--rm
+            |--workdir \${PWD}
+            |--user \$(id -u):\$(id -g)
+            |-v \${PWD}:\${PWD}
+            |-v /etc/group:/etc/group:ro
+            |-v /etc/passwd:/etc/passwd:ro
+            |-v \${HOME}/.m2:\${HOME}/.m2
+            |-v \${HOME}/.docker:\${HOME}/.docker
+            |${needDockerSocket ? '-v /var/run/docker.sock:/var/run/docker.sock' : ''}
+            |${env}
+            |\$(for group in \$(id -G); do printf ' --group-add %s' "\$group"; done)
+            |--group-add \$(stat -c '%g' /var/run/docker.sock)
+            |${bobImage} -r bob/ruleset2.0.yaml
+            |"""
+        return cmd
+                .stripMargin()           // remove indentation
+                .replace('\n', ' ')      // join lines
+                .replaceAll(/[ ]+/, ' ') // replace multiple spaces by one
+    }
+}
+      

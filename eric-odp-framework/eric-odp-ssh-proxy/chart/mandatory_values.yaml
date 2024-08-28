@@ -1,0 +1,85 @@
+
+
+images:
+  eric-odp-ssh-proxy:
+    enabled: false
+    ## Name should be modified based on the SG
+    name: eric-odp-ssh-proxy
+    tag: VERSION
+    command:
+  sshInitContainer:
+    enabled: false
+    ## Name should be modified based on the SG
+    name: eric-odp-ssh-proxy-init
+    tag: VERSION
+    command:
+  sshWaitForCertificatesContainer:
+    enabled: false
+    ## Name should be modified based on the SG
+    name: eric-odp-ssh-proxy-waitforcerts
+    tag: VERSION
+    command:
+
+imageCredentials:
+  repoPath: proj-enm
+  pullPolicy: Always
+  pullSecret:
+  registry:
+    url:
+
+ssh_broker:
+  ## Name should be modified based on the SG
+  name: eric-odp-ssh-proxy
+  #needs to be clarified
+  hostName:
+  #needs to be clarified
+  serviceAccountName:
+  selector:
+    ## Name should be modified based on the SG
+    name: eric-odp-ssh-proxy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  # Extra Annotations to be added to pod
+  podAnnotations: {}
+  securityContext:
+    initContainer:
+    # jboss_user ID
+    runAsUser: 308
+    # group enm ID
+    runAsGroup: 205
+  # Lifecycle hooks before terminating pod
+  lifecycle:
+    handler:
+      enabled: true
+  ## Affinity for pod assignment
+  affinity: requiredDuringSchedulingIgnoredDuringExecution
+  # Constrain which nodes your pod is eligible to be scheduled on
+  nodeAffinity: {}
+  ## Node selector
+  nodeSelector: {}
+  # Number of replicas(pods) to deploy
+  ## Name should be modified based on the SG
+  replicas-eric-odp-ssh-proxy: 1
+  ## resources
+  resources:
+    requests:
+      enabled: false
+    limits:
+      enabled: false
+  ## probes
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
+
+
+ssh_broker_service:
+  ## Name should be modified based on the SG
+  name: eric-odp-ssh-proxy-svc
+  # IPv4 SG VIP address
+  loadBalancerIPv4:
+  # IPv6 SG VIP address
+  loadBalancerIPv6:

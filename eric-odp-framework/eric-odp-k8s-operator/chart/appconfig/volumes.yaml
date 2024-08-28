@@ -1,0 +1,6 @@
+- name: gp
+  configMap:
+    name: gpodpmanager
+- name: data
+  persistentVolumeClaim:
+    claimName: data

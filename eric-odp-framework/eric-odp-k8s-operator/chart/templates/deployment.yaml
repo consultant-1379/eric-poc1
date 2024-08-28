@@ -1,0 +1,14 @@
+{{- template "eric-enm-common-helmchart-library.deployment" (list . "ondemand-pods-manager.deployment") -}}
+{{- define "ondemand-pods-manager.deployment" -}}
+spec:
+  replicas: {{ .Values.global.ondemand_config.replicaCount }}
+  strategy:
+    rollingUpdate:
+      maxSurge: {{ .Values.updateStrategy.rollingUpdate.maxSurge }}
+      maxUnavailable: {{ .Values.updateStrategy.rollingUpdate.maxUnavailable }}
+    type: {{ .Values.updateStrategy.type | quote }}
+  template:
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+{{- end -}}

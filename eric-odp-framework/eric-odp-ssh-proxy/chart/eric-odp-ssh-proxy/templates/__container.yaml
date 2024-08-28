@@ -1,0 +1,210 @@
+{{- define "eric-odp-ssh-proxy.container.tpl" -}}
+initContainers:
+{{- if index .Values "images" "sshInitContainer" }}
+{{- if .Values.images.sshInitContainer.enabled }}
+- name: {{ .Values.ssh_broker.name }}-init
+  image: {{ template "eric-odp-ssh-proxy.registryUrl" . }}/{{ .Values.imageCredentials.repoPath }}/{{ index .Values "images" "sshInitContainer" "name" }}:{{ index .Values "images" "sshInitContainer" "tag" }}
+  securityContext:
+    allowPrivilegeEscalation: true
+    runAsNonRoot: true
+{{- if index .Values "ssh_broker" "securityContext" "runAsUser" }}
+    runAsUser: {{ .Values.ssh_broker.securityContext.runAsUser }}
+{{- end }}
+{{- if index .Values "ssh_broker" "securityContext" "runAsGroup" }}
+    runAsGroup: {{ .Values.ssh_broker.securityContext.runAsGroup }}
+{{- end }}
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ "SETGID", "SETUID","KILL","MKNOD" ]
+    seccompProfile:
+      type: RuntimeDefault
+{{- if index .Values "ssh_broker" "securityContext" }}
+{{- if index .Values "ssh_broker" "securityContext" "initContainer" }}
+{{ toYaml .Values.securityContext.initContainer | indent 4 }}
+{{- end }}
+{{- end }}
+  imagePullPolicy: {{ .Values.imageCredentials.pullPolicy }}
+  command: {{ index .Values "images" "sshInitContainer" "command" }}
+  env:
+{{- if .Files.Glob "appconfig/sshProxy/initcontainers/sshInitContainer/env.yaml" }}
+{{ tpl (.Files.Get "appconfig/sshProxy/initcontainers/sshInitContainer/env.yaml") . | indent 4 }}
+{{- end }}
+  volumeMounts:
+{{ tpl (.Files.Get "appconfig/sshProxy/volumeMounts.yaml") . | indent 2 }}
+{{ tpl (.Files.Get "appconfig/sshProxy/initcontainers/sshInitContainer/volumeMounts.yaml") . | indent 2 }}
+{{- end }}
+{{- end }}
+{{- if index .Values "images" "sshWaitForCertificatesContainer" }}
+{{- if .Values.images.sshWaitForCertificatesContainer.enabled }}
+- name: {{ .Values.ssh_broker.name }}-waitforcerts
+  image: {{ template "eric-odp-ssh-proxy.registryUrl" . }}/{{ .Values.imageCredentials.repoPath }}/{{ index .Values "images" "sshWaitForCertificatesContainer" "name" }}:{{ index .Values "images" "sshWaitForCertificatesContainer" "tag" }}
+  imagePullPolicy: {{ .Values.imageCredentials.pullPolicy }}
+  command: {{ index .Values "images" "sshWaitForCertificatesContainer" "command" }}
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+  env:
+{{- if .Files.Glob "appconfig/sshProxy/initcontainers/sshWaitForCertificatesContainer/env.yaml" }}
+{{ tpl (.Files.Get "appconfig/sshProxy/initcontainers/sshWaitForCertificatesContainer/env.yaml") . | indent 4 }}
+{{- end }}
+  volumeMounts:
+{{ tpl (.Files.Get "appconfig/sshProxy/initcontainers/sshWaitForCertificatesContainer/volumeMounts.yaml") . | indent 2 }}
+{{- end }}
+{{- end }}
+containers:
+- name: {{ .Values.ssh_broker.name }}
+  image: {{ template "eric-odp-ssh-proxy.registryUrl" . }}/{{ .Values.imageCredentials.repoPath }}/{{ index .Values "images" "eric-odp-ssh-proxy" "name" }}:{{ index .Values "images" "eric-odp-ssh-proxy" "tag" }}
+  securityContext:
+    runAsNonRoot: true
+{{- if index .Values "ssh_broker" "securityContext" "runAsUser" }}
+    runAsUser: {{ .Values.ssh_broker.securityContext.runAsUser }}
+{{- end }}
+{{- if index .Values "ssh_broker" "securityContext" "runAsGroup" }}
+    runAsGroup: {{ .Values.ssh_broker.securityContext.runAsGroup }}
+{{- end }}
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ "ALL" ]
+      #drop: [ "SETGID", "SETUID","KILL","MKNOD" ]
+  imagePullPolicy: {{ .Values.imageCredentials.pullPolicy }}
+{{- if index .Values "lifecycle" }}
+{{- if  .Values.ssh_broker.lifecycle.handler.enabled }}
+  lifecycle:
+{{ .Files.Get "appconfig/sshProxy/lifecycle_handler.yaml" | indent 4 }}
+{{- end }}
+{{- end }}
+{{- if index .Values "images" "eric-odp-ssh-proxy" "command" }}
+  command: {{ index .Values "images" "eric-odp-ssh-proxy" "command" }}
+{{- end }}
+{{- if or .Values.ssh_broker.resources.requests.enabled .Values.ssh_broker.resources.limits.enabled }}
+  resources:
+{{- if  .Values.ssh_broker.resources.requests.enabled }}
+    requests:
+{{- if index .Values "ssh_broker" "resources" "requests" "ephemeral-storage" }}
+      ephemeral-storage: {{ index .Values "ssh_broker" "resources" "requests" "ephemeral-storage" | quote }}
+{{- end }}
+{{- if  .Values.ssh_broker.resources.requests.memory }}
+      memory: {{ .Values.ssh_broker.resources.requests.memory | quote }}
+{{- end }}
+{{- if  .Values.ssh_broker.resources.requests.cpu }}
+      cpu: {{ .Values.ssh_broker.resources.requests.cpu | quote }}
+{{- end }}
+{{- end }}
+{{- if  .Values.ssh_broker.resources.limits.enabled }}
+    limits:
+{{- if index .Values "ssh_broker" "resources" "limits" "ephemeral-storage" }}
+      ephemeral-storage: {{ index .Values "ssh_broker" "resources" "limits" "ephemeral-storage" | quote }}
+{{- end }}
+{{- if  .Values.ssh_broker.resources.limits.memory }}
+      memory: {{ .Values.ssh_broker.resources.limits.memory | quote }}
+{{- end }}
+{{- if  .Values.ssh_broker.resources.limits.cpu }}
+      cpu: {{ .Values.ssh_broker.resources.limits.cpu | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+  env:
+    - name: TZ
+      value: {{ .Values.global.timezone }}
+{{- if .Files.Glob "appconfig/sshProxy/envvars/*.yaml" }}
+{{ $root := .}}
+{{ range $path, $bytes :=  .Files.Glob  "appconfig/sshProxy/envvars/*.yaml" }}
+{{ tpl ($root.Files.Get $path) $root | indent 4 }}
+{{ end }}
+{{- end }}
+{{- if .Files.Glob "appconfig/sshProxy/containerPorts.yaml" }}
+  ports:
+{{ tpl (.Files.Get "appconfig/sshProxy/containerPorts.yaml") . | indent 4 }}
+{{- end }}
+{{- if index .Values "ssh_broker" "startupProbe" }}
+{{- if .Values.ssh_broker.startupProbe.enabled }}
+  startupProbe:
+{{- if .Values.ssh_broker.startupProbe.httpPort }}
+    httpGet:
+      port: {{ .Values.ssh_broker.startupProbe.httpPort }}
+{{- if .Values.ssh_broker.startupProbe.httpPath }}
+      path: {{ .Values.ssh_broker.startupProbe.httpPath }}
+{{- end }}
+{{- end }}
+{{- if .Values.ssh_broker.startupProbe.command }}
+    exec:
+      command:
+        - {{ .Values.ssh_broker.startupProbe.command}}
+{{- if .Values.ssh_broker.startupProbe.arguments }}
+        - {{ .Values.ssh_broker.startupProbe.arguments }}
+{{- end }}
+{{- end }}
+    initialDelaySeconds: {{ .Values.ssh_broker.startupProbe.initialDelaySeconds }}
+    periodSeconds: {{ .Values.ssh_broker.startupProbe.periodSeconds }}
+    timeoutSeconds: {{ .Values.ssh_broker.startupProbe.timeoutSeconds }}
+    failureThreshold: {{ .Values.ssh_broker.startupProbe.failureThreshold }}
+{{- end }}
+{{- end }}
+{{- if .Values.ssh_broker.livenessProbe.enabled }}
+  livenessProbe:
+{{- if .Values.ssh_broker.livenessProbe.httpPort }}
+    httpGet:
+      port: {{ .Values.ssh_broker.livenessProbe.httpPort }}
+{{- if .Values.ssh_broker.livenessProbe.httpPath }}
+      path: {{ .Values.ssh_broker.livenessProbe.httpPath }}
+{{- end }}
+{{- end }}
+{{- if .Values.ssh_broker.livenessProbe.command }}
+    exec:
+      command:
+        - {{ .Values.ssh_broker.livenessProbe.command}}
+{{- if .Values.ssh_broker.livenessProbe.arguments }}
+        - {{ .Values.ssh_broker.livenessProbe.arguments }}
+{{- end }}
+{{- end }}
+    initialDelaySeconds: {{ .Values.ssh_broker.livenessProbe.initialDelaySeconds }}
+    periodSeconds: {{ .Values.ssh_broker.livenessProbe.periodSeconds }}
+    timeoutSeconds: {{ .Values.ssh_broker.livenessProbe.timeoutSeconds }}
+{{- if .Values.ssh_broker.livenessProbe.failureThreshold }}
+    failureThreshold: {{ .Values.ssh_broker.livenessProbe.failureThreshold }}
+{{- else }}
+    failureThreshold: 2
+{{- end }}
+{{- end }}
+{{- if .Values.ssh_broker.readinessProbe.enabled }}
+  readinessProbe:
+{{- if .Values.ssh_broker.readinessProbe.httpPort }}
+    httpGet:
+      port: {{ .Values.ssh_broker.readinessProbe.httpPort }}
+{{- if .Values.ssh_broker.readinessProbe.httpPath }}
+      path: {{ .Values.ssh_broker.readinessProbe.httpPath }}
+{{- end }}
+{{- end }}
+{{- if .Values.ssh_broker.readinessProbe.command }}
+    exec:
+      command:
+        - {{ .Values.ssh_broker.readinessProbe.command}}
+{{- if .Values.ssh_broker.readinessProbe.arguments }}
+        - {{ .Values.ssh_broker.readinessProbe.arguments }}
+{{- end }}
+{{- end }}
+    initialDelaySeconds: {{ .Values.ssh_broker.readinessProbe.initialDelaySeconds }}
+    periodSeconds: {{ .Values.ssh_broker.readinessProbe.periodSeconds }}
+    timeoutSeconds: {{ .Values.ssh_broker.readinessProbe.timeoutSeconds }}
+{{- if .Values.ssh_broker.readinessProbe.failureThreshold }}
+    failureThreshold: {{ .Values.ssh_broker.readinessProbe.failureThreshold }}
+{{- else }}
+    failureThreshold: 2
+{{- end }}
+{{- end }}
+{{- if .Files.Glob  "appconfig/sshProxy/volumeMounts.yaml" }}
+  volumeMounts:
+{{- if index .Values "ssh_broker" "persistentVolumeClaim" }}
+{{- if .Values.ssh_broker.persistentVolumeClaim.enabled }}
+  - name: {{ template "eric-odp-ssh-proxy.name" . }}
+    mountPath: {{ .Values.ssh_broker.persistentVolumeClaim.mountPath }}
+{{- end }}
+{{- end }}
+{{ tpl (.Files.Get "appconfig/sshProxy/volumeMounts.yaml") . | indent 2 }}
+{{- end }}
+{{- end -}}

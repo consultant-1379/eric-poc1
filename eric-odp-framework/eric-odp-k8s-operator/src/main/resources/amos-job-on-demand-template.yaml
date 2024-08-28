@@ -1,0 +1,231 @@
+apiVersion: "batch/v1"
+kind: Job
+metadata:
+  annotations:
+  labels:
+  name: amos-job-on-demand-<USER_VALUE>
+spec:
+  activeDeadlineSeconds: 14400
+  ttlSecondsAfterFinished: 0
+  backoffLimit: 6
+  completionMode: NonIndexed
+  completions: 1
+  parallelism: 1
+  selector:
+    matchLabels:
+  suspend: false
+  template:
+    metadata:
+      labels:
+        name: amos-interactive-headless-svc
+        app: amos-<USER_VALUE>
+    spec:
+      #      securityContext:
+      #        fsGroup: 1000660000
+      hostname: <USER_VALUE>
+      subdomain: amos-interactive-headless-svc
+      restartPolicy: "OnFailure"
+      containers:
+        - image: armdocker.rnd.ericsson.se/proj_oss_releases/enm/eric-odp-main-container:erubarg-20240206_1344
+          name: amos-interactive
+          command:
+            - /usr/bin/catatonit
+            - --
+            - /stdout-redirect
+            - -redirect
+            - all
+            - -service-id
+            - amos-odp
+            - -logfile
+            - /var/lib/eric-odp-logger/enm-odp.log
+            - -size
+            - "5"
+            - -rotate
+            - "2"
+            - --
+            - "/bin/bash"               # Without /bin/bash here, belowscript doesn't seems to be executed withd stdout-redirect.
+            - /ericsson/pod_setup/sshd/scripting/start_sshd.sh
+          tty: true
+          stdin: true
+          ports:
+            - containerPort: 2022
+              name: ssh
+          imagePullPolicy: Always
+          env:
+            - name: TZ
+              value: Europe/Dublin
+            - name: JBOSS_HOST
+              #value: $service
+              value: amos
+          volumeMounts:
+            - name: home
+              mountPath: /home/shared/<USER_VALUE>
+              subPath: <USER_VALUE>
+            - name: amos
+              mountPath: /ericsson/log/amos
+            - name: data
+              mountPath: /ericsson/tor/data
+            - name: var-lib-eric-odp
+              mountPath: /var/lib/eric-odp
+            - name: logs
+              mountPath: /var/lib/eric-odp-logger/
+          securityContext:
+            runAsUser: <RUNASUSER_VALUE>
+            runAsGroup: <RUNASGROUP_VALUE>
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+              #seLinuxOptions:
+              #level: "s0:c26,c5"
+        - args:
+          - stdout-redirect
+          - -redirect=all
+          - -size=2
+          - -rotate=5
+          - -logfile=/var/lib/eric-odp-logger/logshipper.log
+          - --
+          - /opt/fluent-bit/scripts/init.sh
+          - --config=/etc/fluent-bit/fluent-bit.conf
+          env:
+            - name: TLS_ENABLED
+              value: "false"
+            - name: TZ
+              value: Europe/Dublin  # For now, hardcoded to be modified later.
+            - name: SHUTDOWN_DELAY
+              value: "10"
+            - name: SERVICE_ID
+              value: eric-amos-odp
+            - name: RUN_AND_EXIT
+              value: "true"
+            - name: CONTAINER_NAME
+              value: logshipper
+            - name: LOG_PATH
+              value: /var/lib/eric-odp
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: LS_SIDECAR_CERT_FILE
+              value: clicert.pem
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LS_SIDECAR_KEY_FILE
+              value: cliprivkey.pem
+            - name: LOG_LEVEL
+              value: info
+            - name: LS_SIDECAR_CA_CERT_FILE
+              value: ca.crt
+            - name: CLIENT_CERT_PATH
+              value: /run/secrets/eric-enm-ondemand-pods-manager-log-shipper-sidecar-lt-http-client-cert
+          name: logshipper
+          image: ieatjfrepo1.athtem.eei.ericsson.se/hub/proj-adp-log-released/eric-log-shipper-sidecar:16.0.1-72
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 50m
+              memory: 100Mi
+            requests:
+              cpu: 20m
+              memory: 50Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+            procMount: Default
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/fluent-bit/
+              name: fluentbit-config
+              readOnly: true
+            - mountPath: /var/lib/eric-odp
+              name: var-lib-eric-odp
+            - mountPath: /var/lib/eric-odp-logger/
+              name: logs
+      initContainers:
+        - name: amos-interactive-init
+          command: [ "/bin/bash", "-c", "--" ]
+          args: [ "/usr/local/bin/setup_for_main_container.sh" ]
+          image: armdocker.rnd.ericsson.se/proj_oss_releases/enm/eric-odp-init:erubarg-20240130_1142
+          imagePullPolicy: Always
+          resources: { }
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          env:
+            - name: TZ
+              value: Europe/Dublin
+            - name: INIT_GROUPS
+              value: <INIT_GROUPS_VALUE>
+            - name: MAIN_APPLICATION_USER_NAME
+              value: <MAIN_APPLICATION_USER_NAME_VALUE>
+            - name: MAIN_APPLICATION_USER_UID
+              value: <MAIN_APPLICATION_USER_UID_VALUE>
+            - name: MAIN_APPLICATION_USER_PRIMARY_GID
+              value: <MAIN_APPLICATION_USER_PRIMARY_GID_VALUE>
+            - name: SSO_TOKEN
+              value: <SSO_TOKEN_VALUE>
+          volumeMounts:
+            - name: var-lib-eric-odp
+              mountPath: /var/lib/eric-odp
+            - name: home
+              mountPath: /home/shared
+          securityContext:
+            runAsUser: <RUNASUSER_VALUE>
+            runAsGroup: <RUNASGROUP_VALUE>
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+              #seLinuxOptions:
+              #level: "s0:c26,c5"
+      #serviceAccountName: enmserviceaccount # used in openshift scc
+#      serviceAccountName: eric-enm-ondemandpodsmanager-sa
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: eric-enm-rwxpvc-home-shared
+        - name: amos
+          persistentVolumeClaim:
+            claimName: eric-enm-rwxpvc-amos
+        - name: data
+          persistentVolumeClaim:
+            claimName: eric-enm-rwxpvc-data
+        - emptyDir:
+            sizeLimit: 5Mi
+          name: var-lib-eric-odp
+        - emptyDir:
+            sizeLimit: 35Mi
+          name: logs
+        - configMap:
+            defaultMode: 420
+            items:
+              - key: filters.conf
+                path: filters.conf
+              - key: fluent-bit.conf
+                path: fluent-bit.conf
+              - key: inputs.conf
+                path: inputs.conf
+              - key: outputs.conf
+                path: outputs.conf
+              - key: parsers.conf
+                path: parsers.conf
+            name: amos-odp-logshipper-cfg
+            optional: false
+          name: fluentbit-config

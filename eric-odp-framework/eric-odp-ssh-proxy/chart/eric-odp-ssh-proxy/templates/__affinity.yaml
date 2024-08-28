@@ -1,0 +1,27 @@
+{{ define "eric-odp-ssh-proxy.affinity.tpl" -}}
+{{- if .Values.ssh_broker.affinity }}
+affinity:
+  podAntiAffinity:
+    {{ if eq .Values.ssh_broker.affinity "requiredDuringSchedulingIgnoredDuringExecution" }}
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - {{ .Values.ssh_broker.name }}
+      topologyKey: "kubernetes.io/hostname"
+    {{ else }}
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - {{ .Values.ssh_broker.name }}
+          topologyKey: "kubernetes.io/hostname"
+        weight: 1
+    {{ end }}
+{{- end }}
+{{- end -}}

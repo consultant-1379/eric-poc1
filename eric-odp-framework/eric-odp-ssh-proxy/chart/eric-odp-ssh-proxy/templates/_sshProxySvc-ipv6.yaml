@@ -1,0 +1,19 @@
+{{- define "eric-odp-ssh-proxy.service-ipv6.tpl" -}}
+apiVersion: v1
+kind: Service
+metadata:
+{{ include "eric-odp-ssh-proxy.metadata" . | indent 2 }}
+spec:
+  type: LoadBalancer
+  ipFamilies: ["IPv6"]
+  ipFamilyPolicy: SingleStack
+  loadBalancerIP: {{ .Values.ssh_broker_service.loadBalancerIPv6 }}
+  ports:
+{{ tpl (.Files.Get "appconfig/sshProxy/servicePorts.yaml") . | indent 4 }}
+  selector:
+    #headless selector
+    name: {{ .Values.ssh_broker_service.name }}
+{{- end }}
+{{- define "eric-odp-ssh-proxy.service-ipv6" -}}
+{{- template "eric-odp-ssh-proxy.util.merge" (append . "eric-odp-ssh-proxy.service-ipv6.tpl") -}}
+{{- end -}}
